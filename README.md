@@ -2,7 +2,7 @@
 
 This repository contains project assignments completed for the **Particle-Based Simulations** course, part of the Master's program in **Chemical Engineering** at **Eindhoven University of Technology (TU/e)**.
 
-## 📂 Repository Structure
+## Repository Structure
 Each folder in this repository corresponds to a different assignment from the course. The assignments involve various numerical and computational techniques used in particle-based simulation methods.
 
 ### Key Topics Covered
@@ -13,13 +13,13 @@ Each folder in this repository corresponds to a different assignment from the co
 - Periodic Boundary Conditions (PBC)
 - Bond connectivity in bead-spring chain models
 
-## 📖 Documentation
+## Documentation
 Each assignment folder contains:
 - A **README.md** file explaining the objective and implementation details.
 - The source code, configuration files, and input data.
 - Output examples and result analysis where applicable.
 
-## 🤝 Contributions
+## Contributions
 This repository serves as a record of completed coursework and is not open for contributions. However, discussions and feedback are always welcome!
 
 ---
