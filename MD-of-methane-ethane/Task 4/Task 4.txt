@@ -1,0 +1,316 @@
+Task 4
+
+1&3)
+
+First we put that the number of total particles in the system is 50% methane and 50% ethane. Then we assign methane particles type[i] = 0 and ethane to type[i] = 1. To achieve we loop through all the particles and assign them as methane, then we start from i = num_methane until num_part and assign them as ethane. 
+
+// This function initializes the particle types.
+// Particle type 0 is assigned to all particles for now, but this could be modified
+// later to initialize different types (e.g., methane and ethane in a binary mixture).
+void initialise_types(struct Parameters *p_parameters, struct Vectors *p_vectors)
+{
+    size_t num_methane = p_parameters->num_part / 2; // 50% methane (CH4)
+    size_t num_ethane = p_parameters->num_part - num_methane; // 50% ethane (CH3-CH3)
+
+    for (size_t i = 0; i < p_parameters->num_part; i++)
+        p_vectors->type[i] = 0; // Methane (CH4) type 0
+
+    for (size_t i = num_methane; i < num_methane + num_ethane; i++) 
+        p_vectors->type[i] = 1; // Ethane (CH3-CH3) type 1
+}
+
+part 3:
+
+For the bond stretch we use initialize_bond_connectivity function, where declare first again the number the ethane particles. Then we loop through the number of ethane particles, as one ethane particle corresponds to one bond between 2 ethyl groups. 
+
+// This function initializes the bond connectivity between particles.
+// TODO: Students need to specify bonds between pairs of particles, which are stored as bond[i].i and bond[i].j.
+// This will be important for handling bonded interactions in the simulation.
+void initialise_bond_connectivity(struct Parameters *p_parameters, struct Vectors *p_vectors)
+{
+    // Ethane molecules are sequential and each two particles form an ethane
+    size_t num_ethane = p_parameters->num_part / 2;  // 50% ethane
+    size_t num_bonds = num_ethane;  // One bond per ethane molecule
+
+    struct Bond *bonds = (struct Bond *)malloc(num_bonds * sizeof(struct Bond));
+
+    // TODO: Specify bonds between particles, i.e., bonds[i].i and bonds[i].j for bonded particle pairs.
+
+    for (size_t i = 0, bond_idx = 0; i < num_ethane; i++) {
+        size_t particle_idx = 2 * i;  // Index for the first CH3 group in each ethane
+        bonds[bond_idx].i = particle_idx;
+        bonds[bond_idx].j = particle_idx + 1;  // Index for the second CH3 group
+        bond_idx++;
+    }
+
+    p_vectors->num_bonds = num_bonds;
+    p_vectors->bonds = bonds;
+}
+
+Forces:
+
+For the bond stretch force we modify calculate_force_bond function. Where we have added the bond stretch according to the given formula in the assignment. 
+
+// This function calculates bond-stretch forces based on the current positions of the bonded particles.
+// It applies the minimum image convention to calculate the distance between bonded pairs and then
+// computes the force and potential energy due to the bond interaction.
+double calculate_forces_bond(struct Parameters *p_parameters, struct Vectors *p_vectors)
+{
+    double Epot = 0.0;
+    struct Bond *bonds = p_vectors->bonds;
+    size_t num_bonds = p_vectors->num_bonds;
+    struct Vec3D *f = p_vectors->f;
+    struct Vec3D *r = p_vectors->r;
+    struct Vec3D L = p_parameters->L;
+    struct Vec3D rij;
+    struct Vec3D fi = {0.0, 0.0, 0.0};
+
+    // Loop through each bond and calculate the forces
+    for (size_t q = 0; q < num_bonds; ++q)
+    {
+        size_t i = bonds[q].i;
+        size_t j = bonds[q].j;
+
+        // Apply the minimum image convention for calculating distances
+        rij.x = r[i].x - r[j].x;
+        rij.x = rij.x - L.x * floor(rij.x / L.x + 0.5);
+        rij.y = r[i].y - r[j].y;
+        rij.y = rij.y - L.y * floor(rij.y / L.y + 0.5);
+        rij.z = r[i].z - r[j].z;
+        rij.z = rij.z - L.z * floor(rij.z / L.z + 0.5);
+
+        // TODO: Provide the bond force calculation and assign forces to particles i and j
+
+        double dist = sqrt(rij.x * rij.x + rij.y * rij.y + rij.z * rij.z);
+        double dr = dist - r_0;  // Deviation from the equilibrium bond length
+        double force_mag = kb * dr / dist;  // Force magnitude
+
+        // Potential energy due to bond-stretch interactions
+        Epot += 0.5 * kb * dr * dr;
+
+        fi.x = force_mag * rij.x;
+        fi.y = force_mag * rij.y;
+        fi.z = force_mag * rij.z;
+
+        f[i].x += fi.x;
+        f[i].y += fi.y;
+        f[i].z += fi.z;
+        f[j].x -= fi.x;
+        f[j].y -= fi.y;
+        f[j].z -= fi.z;
+    }
+
+    return Epot;  // Return the potential energy due to bond-stretch interactions
+}
+
+2. For the non-bonded forces/interactions we need to manage to calculate between methane-methane, ethane-ethane and methane-ethane. To achieve that we need introduce sigma and epsilon values for both methane and ethane. We add a structure that holds mass, epsilon and sigma for different particle type. Then we add this structures to parameters. 
+
+struct ParticleType
+{
+    double mass;       //!< Mass of the particle (in atomic units or any consistent unit)
+    double sigma;      //!< Lennard-Jones particle diameter (σ) in Å
+    double epsilon;    //!< Lennard-Jones interaction strength (ε) in eV or consistent energy unit
+};
+
+/**
+ * @brief Struct to store all parameters. These parameters are set by the function @ref set_parameters.
+ * 
+ */
+struct Parameters
+{
+    size_t num_part;         //!< Number of particles
+    size_t num_dt_steps;     //!< Number of time steps
+    double dt;               //!< integration time step
+    struct Vec3D L;          //!< Box sizes in 3 direction
+    int exclude_12_nb;       //!< If true (=1) 1-2 connected atoms are exluded from non-bonded interactions 
+    int exclude_13_nb;       //!< If true (-1) 1-3 connected atoms are exluded from non-bonded interactions 
+    struct ParticleType particle_types[2] //!< Number of particles in the system. In our example, it is 2 (methane-ethane)
+    double Temp;                //!< Temperature of the system 
+    double kT;               //!< Thermal energy
+    double mass;             //!< Mass of a particle
+    double epsilon;          //!< LJ interaction strength
+    double sigma;            //!< LJ particle diameter
+    double r_cut;            //!< Cut-off distance for LJ interaction
+    double r_shell;          //!< Shell thickness for neighbor list
+    size_t num_dt_pdb;       //!< Number of time steps between pdb saves
+    double rescale_output;   //!< Rescale factor for outputting positions, typically used to rescale lenghts to a magnitude required by specific visualization software.
+    char filename_pdb[1024]; //!< filename (without extension) for pdb file
+    char filename_xyz[1024]; //!< filename (without extension) for pdb file
+    char load_restart;       //!< if equal 1 restart file is loaded
+    size_t num_dt_restart;   //!< Number of time steps between saves of restart file
+    char restart_in_filename[1024];  //!< filename for loaded restart file
+    char restart_out_filename[1024]; //!< filename for saved restart file
+};
+
+So we can add the values for different types through set_parameters function. 
+
+void set_parameters(struct Parameters *p_parameters)
+{
+// System parameters
+  p_parameters->Temp = 298;                                // Temperature in K
+  p_parameters->kT = kb * p_parameters->Temp;              // Thermal energy (kB * T)
+
+// Set particle type-specific properties for Methane (index 0) and Ethane (index 1)
+  p_parameters->particle_types[0].mass = 16.04;            // Methane mass (amu)
+  p_parameters->particle_types[0].sigma = 3.73;            // Methane Lennard-Jones sigma (A)
+  p_parameters->particle_types[0].epsilon = 148 * kb;      // Methane Lennard-Jones epsilon (eV)
+
+  p_parameters->particle_types[1].mass = 30.07;            // Ethane mass (amu)
+  p_parameters->particle_types[1].sigma = 3.75;            // Ethane Lennard-Jones sigma (A)
+  p_parameters->particle_types[1].epsilon = 98 * kb;       // Ethane Lennard-Jones epsilon (eV)
+
+Now we need to adjust the function calculate_forces_nb to include all the interactions (M-M, E-M and E-E). Before the if statement to check rij.sq , rcut.sq. Note: if we have interaction M-M or E-E then sij = sigme_E * sigma_E / 2 = sigma_E.
+
+// This function calculates non-bonded forces between particles using the neighbor list.
+// The potential energy and forces are calculated using the Lennard-Jones potential.
+double calculate_forces_nb(struct Parameters *p_parameters, struct Nbrlist *p_nbrlist, struct Vectors *p_vectors)
+{
+    struct Vec3D df;
+    double r_cutsq,sr2, sr6, sr12, fr;
+    double sigma_ij, epsilon_ij, sr_cut, sr_cut6, sr_cut12;
+    struct DeltaR rij;
+    struct Pair *nbr = p_nbrlist->nbr;
+    const size_t num_nbrs = p_nbrlist->num_nbrs;
+    struct Vec3D *f = p_vectors->f;
+    size_t num_part = p_parameters->num_part;
+
+    r_cutsq = p_parameters->r_cut * p_parameters->r_cut;
+
+    double Epot = 0.0, Epot_cutoff;
+
+    // Loop through the neighbor list and calculate the forces for each particle pair
+    for (size_t k = 0; k < num_nbrs; k++)
+    {
+        rij = nbr[k].rij;
+        size_t i = nbr[k].i;
+        size_t j = nbr[k].j;
+
+        // Get the types of particles i and j
+        int type_i = p_vectors->type[i];  // Type of particle i (0 = methane, 1 = ethane)
+        int type_j = p_vectors->type[j];  // Type of particle j (0 = methane, 1 = ethane)
+
+        // Calculate sigma_ij and epsilon_ij using Lorentz-Berthelot mixing rules
+        sigma_ij = (p_parameters->particle_types[type_i].sigma + p_parameters->particle_types[type_j].sigma) / 2.0;
+        epsilon_ij = sqrt(p_parameters->particle_types[type_i].epsilon * p_parameters->particle_types[type_j].epsilon);
+        
+        // Calculate the cutoff potential energy for this pair
+        sr_cut = (sigma_ij / p_parameters->r_cut);
+        sr_cut6 = sr_cut * sr_cut * sr_cut * sr_cut * sr_cut * sr_cut;  // (sigma / r_cutoff)^6
+        sr_cut12 = sr_cut6 * sr_cut6;                                   // (sigma / r_cutoff)^12
+        Epot_cutoff = 4.0 * epsilon_ij * (sr_cut12 - sr_cut6);          // Potential energy at the cutoff
+        
+        // Compute forces if the distance is smaller than the cutoff distance
+        if (rij.sq < r_cutsq)
+        {
+            sr2 = (sigma_ij * sigma_ij) / rij.sq;
+            sr6 = sr2 * sr2 * sr2;
+            sr12 = sr6 * sr6;
+
+            // Calculate the potential energy
+            Epot += 4.0 * epsilon_ij * (sr12 - sr6 - Epot_cutoff);
+
+            // Compute the force and apply it to both particles
+            fr = 24.0 * epsilon_ij * (2.0 * sr12 - sr6) / rij.sq;  // Force divided by distance
+            df.x = fr * rij.x;
+            df.y = fr * rij.y;
+            df.z = fr * rij.z;
+
+            f[i].x += df.x;
+            f[i].y += df.y;
+            f[i].z += df.z;
+            f[j].x -= df.x;
+            f[j].y -= df.y;
+            f[j].z -= df.z;
+        }
+    }
+
+    return Epot;  // Return the potential energy due to non-bonded interactions
+}
+
+In addition, we need to adjust the update_velocities_half_dt as we have binary system with different masses. 
+
+// This function updates particle velocities by half a time step using the current forces.
+// The updated velocities are used in the velocity-Verlet integration scheme.
+// The function also calculates and returns the kinetic energy of the system.
+double update_velocities_half_dt(struct Parameters *p_parameters, struct Nbrlist *p_nbrlist, struct Vectors *p_vectors)
+{
+    double Ekin = 0.0;  // Initialize kinetic energy
+    struct Vec3D *v = p_vectors->v;  // Particle velocities
+    struct Vec3D *f = p_vectors->f;  // Forces acting on particles
+    int *type = p_vectors->type;     // Particle types (0 = methane, 1 = ethane)
+
+    // Loop over all particles and update their velocities
+    for (size_t i = 0; i < p_parameters->num_part; i++)
+    {   
+        // Select the mass based on particle type
+        double mass = p_parameters->particle_types[type[i]].mass;
+
+        // Factor for velocity update, considering the particle's mass
+        double factor = 0.5 / mass * p_parameters->dt;
+
+        v[i].x += factor * f[i].x;  // Update velocity in x-direction
+        v[i].y += factor * f[i].y;  // Update velocity in y-direction
+        v[i].z += factor * f[i].z;  // Update velocity in z-direction
+        Ekin += mass * (v[i].x * v[i].x + v[i].y * v[i].y + v[i].z * v[i].z);  // Accumulate kinetic energy, incl. the mass of the different type
+    }
+
+    // Final kinetic energy calculation
+    Ekin = 0.5 * Ekin;
+    return Ekin;  // Return the system's kinetic energy
+}
+
+In addition, we need to adjust the initialize_velocities function. 
+
+// This function initializes the velocities of particles based on the Maxwell-Boltzmann distribution.
+// The total momentum is also removed to ensure zero total momentum (important for stability).
+void initialise_velocities(struct Parameters *p_parameters, struct Vectors *p_vectors)
+{
+    struct Vec3D sumv = {0.0, 0.0, 0.0};  // Total velocity (to remove later)
+
+    // Assign random velocities to each particle
+    for (size_t i = 0; i < p_parameters->num_part; i++)
+    {   
+        double sqrtktm = sqrt(p_parameters->kT / p_parameters->particle_types[p_vectors->type[i]].mass);
+        p_vectors->v[i].x = sqrtktm * gauss();
+        p_vectors->v[i].y = sqrtktm * gauss();
+        p_vectors->v[i].z = sqrtktm * gauss();
+        sumv.x += p_vectors->v[i].x;
+        sumv.y += p_vectors->v[i].y;
+        sumv.z += p_vectors->v[i].z;
+    }
+
+    // Remove the average velocity to ensure zero total momentum
+    sumv.x /= ((double)(p_parameters->num_part));
+    sumv.y /= ((double)(p_parameters->num_part));
+    sumv.z /= ((double)(p_parameters->num_part));
+    for (size_t i = 0; i < p_parameters->num_part; i++)
+    {
+        p_vectors->v[i].x -= sumv.x;
+        p_vectors->v[i].y -= sumv.y;
+        p_vectors->v[i].z -= sumv.z;
+    }
+}
+4) In dynamics.c we add the code for thermostat:
+void thermostat(struct Parameters *p_parameters, struct Vectors *p_vectors, double Ekin)
+// TODO: Change velocities by thermostatting
+{
+        // Set desired temperature - set here as kT in the parameters 
+    double T_target = p_parameters->kT;
+    
+    // Calculate temperature based on E = 1.5kBT formula
+    double T_current = (2.0 * Ekin) / (3.0 * p_parameters->num_part);
+    
+    double dt = p_parameters->dt; // time step 
+    double tau = 0.01;  // tau-time constant for brendson thermostat
+    
+    // Compute the rescaling factor for velocities (lambda)
+    double lambda = sqrt(1.0 + (dt / tau) * ((T_target / T_current) - 1.0));
+    
+    // Apply the rescaling to the velocities
+    for (int i = 0; i < p_parameters->num_part; ++i) {
+        p_vectors->v[i].x *= lambda;
+        p_vectors->v[i].y *= lambda;
+        p_vectors->v[i].z *= lambda;
+    }
+}
+
